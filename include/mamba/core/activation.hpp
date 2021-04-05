@@ -101,8 +101,12 @@ namespace mamba
 
     class PosixActivator : public Activator
     {
+    private:
+        bool m_subshell = false;
     public:
-        PosixActivator() = default;
+        PosixActivator(bool subshell = false)
+            : m_subshell(subshell)
+        {};
         virtual ~PosixActivator() = default;
 
         std::string script(const EnvironmentTransform& env_transform) override;

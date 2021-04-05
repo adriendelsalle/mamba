@@ -818,7 +818,14 @@ namespace mamba
 
     fs::path PosixActivator::hook_source_path()
     {
-        return Context::instance().root_prefix / "etc" / "profile.d" / "mamba.sh";
+        if (m_subshell)
+        {
+            return Context::instance().root_prefix / "etc" / "profile.d" / "mamba_subshell.sh";
+        }
+        else
+        {
+            return Context::instance().root_prefix / "etc" / "profile.d" / "mamba.sh";
+        }
     }
 
     std::string CmdExeActivator::shell_extension()

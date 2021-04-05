@@ -53,6 +53,13 @@ init_shell_parser(CLI::App* subcom)
                          "to activate for activate, either by name or by path"));
     subcom->add_option("-p,--prefix", prefix.set_cli_config(""), prefix.description());
 
+    auto& subshell = config.insert(
+        Configurable("subshell", false)
+            .group("cli")
+            .rc_configurable(false)
+            .description("Use subshell instead of current shell modification"));
+    subcom->add_flag("--subshell", subshell.set_cli_config(0), subshell.description());
+
     auto& auto_activate_base = config.at("auto_activate_base").get_wrapped<bool>();
     subcom->add_flag("--auto-activate-base,!--no-auto-activate-base",
                      auto_activate_base.set_cli_config(0),
@@ -72,7 +79,8 @@ set_shell_command(CLI::App* subcom)
         auto& prefix = config.at("shell_prefix").compute().value<std::string>();
         auto& type = config.at("shell_type").compute().value<std::string>();
         auto& stack = config.at("shell_stack").compute().value<bool>();
+        auto& subshell = config.at("subshell").compute().value<bool>();
 
-        shell(action, type, prefix, stack);
+        shell(action, type, prefix, stack, subshell);
     });
 }

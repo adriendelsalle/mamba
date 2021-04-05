@@ -13,13 +13,19 @@
 #include "mamba/core/mamba_fs.hpp"
 #include "mamba/core/shell_init.hpp"
 
+#include <reproc++/run.hpp>
+#include <reproc/run.h>
+#include <reproc/drain.h>
+#include <reproc/reproc.h>
+#include <cstring>
 
 namespace mamba
 {
     void shell(const std::string& action,
                std::string& shell_type,
                const std::string& prefix,
-               bool stack)
+               bool stack,
+               bool subshell)
     {
         auto& ctx = Context::instance();
         auto& config = Configuration::instance();
@@ -54,7 +60,7 @@ namespace mamba
 
         if (shell_type == "bash" || shell_type == "zsh" || shell_type == "posix")
         {
-            activator = std::make_unique<mamba::PosixActivator>();
+            activator = std::make_unique<mamba::PosixActivator>(subshell);
         }
         else if (shell_type == "cmd.exe")
         {
@@ -111,7 +117,160 @@ namespace mamba
             {
                 shell_prefix = ctx.root_prefix / "envs" / shell_prefix;
             }
+            if (!fs::exists(shell_prefix))
+            {
+                throw std::runtime_error("Prefix does not exist");
+            }
 
+            if (subshell)
+            {
+                std::string tmp_rc = "umamba_session_rc";
+                std::ifstream src("/home/adrien/.bashrc", std::ios::binary);
+                std::ofstream dest(tmp_rc);
+                dest << src.rdbuf();
+                dest << R"MAMBARAW(
+# Copyright (C) 2012 Anaconda, Inc
+# SPDX-License-Identifier: BSD-3-Clause
+
+__add_sys_prefix_to_path() {
+    # In dev-mode MAMBA_EXE is python.exe and on Windows
+    # it is in a different relative location to condabin.
+    if [ -z "${MAMBA_ROOT_PREFIX}" ]; then
+        return 0
+    fi;
+
+    if [ -n "${WINDIR+x}" ]; then
+        PATH="${MAMBA_ROOT_PREFIX}/bin:${PATH}"
+        PATH="${MAMBA_ROOT_PREFIX}/Scripts:${PATH}"
+        PATH="${MAMBA_ROOT_PREFIX}/Library/bin:${PATH}"
+        PATH="${MAMBA_ROOT_PREFIX}/Library/usr/bin:${PATH}"
+        PATH="${MAMBA_ROOT_PREFIX}/Library/mingw-w64/bin:${PATH}"
+        PATH="${MAMBA_ROOT_PREFIX}:${PATH}"
+    else
+        PATH="${MAMBA_ROOT_PREFIX}/bin:${PATH}"
+    fi
+    \export PATH
+}
+
+
+__conda_hashr() {
+    if [ -n "${ZSH_VERSION:+x}" ]; then
+        \rehash
+    elif [ -n "${POSH_VERSION:+x}" ]; then
+        :  # pass
+    else
+        \hash -r
+    fi
+}
+
+__mamba_activate() {
+    \local cmd="$1"
+    shift
+    \local ask_conda
+    CONDA_INTERNAL_OLDPATH="${PATH}"
+    __add_sys_prefix_to_path
+    \local prefix="$@"
+    if [ "$prefix" = "" ]; then
+        prefix="base"
+    fi
+    ask_conda="$(PS1="$PS1" "$MAMBA_EXE" shell --shell bash "$cmd" --prefix "$prefix")" || \return $?
+    rc=$?
+    PATH="${CONDA_INTERNAL_OLDPATH}"
+    \eval "$ask_conda"
+    if [ $rc != 0 ]; then
+        \export PATH
+    fi
+    __conda_hashr
+}
+
+__mamba_reactivate() {
+    \local ask_conda
+    CONDA_INTERNAL_OLDPATH="${PATH}"
+    __add_sys_prefix_to_path
+    ask_conda="$(PS1="$PS1" "$MAMBA_EXE" shell --shell bash reactivate)" || \return $?
+    PATH="${CONDA_INTERNAL_OLDPATH}"
+    \eval "$ask_conda"
+    __conda_hashr
+}
+
+micromamba() {
+    if [ "$#" -lt 1 ]; then
+        "$MAMBA_EXE"
+    else
+        \local cmd="$1"
+        shift
+        case "$cmd" in
+            activate)
+                __mamba_activate "$cmd" "$@"
+                ;;
+            deactivate)
+                exit 2> /dev/null
+                ;;
+            install|update|upgrade|remove|uninstall)
+                CONDA_INTERNAL_OLDPATH="${PATH}"
+                __add_sys_prefix_to_path
+                "$MAMBA_EXE" "$cmd" "$@"
+                \local t1=$?
+                PATH="${CONDA_INTERNAL_OLDPATH}"
+                if [ $t1 = 0 ]; then
+                    __mamba_reactivate
+                else
+                    return $t1
+                fi
+                ;;
+            *)
+                CONDA_INTERNAL_OLDPATH="${PATH}"
+                __add_sys_prefix_to_path
+                "$MAMBA_EXE" "$cmd" "$@"
+                \local t1=$?
+                PATH="${CONDA_INTERNAL_OLDPATH}"
+                return $t1
+                ;;
+        esac
+    fi
+}
+
+if [ -z "${CONDA_SHLVL+x}" ]; then
+    \export CONDA_SHLVL=0
+    # In dev-mode MAMBA_EXE is python.exe and on Windows
+    # it is in a different relative location to condabin.
+    if [ -n "${_CE_CONDA+x}" ] && [ -n "${WINDIR+x}" ]; then
+        PATH="${MAMBA_ROOT_PREFIX}/condabin:${PATH}"
+    else
+        PATH="${MAMBA_ROOT_PREFIX}/condabin:${PATH}"
+    fi
+    \export PATH
+
+    # We're not allowing PS1 to be unbound. It must at least be set.
+    # However, we're not exporting it, which can cause problems when starting a second shell
+    # via a first shell (i.e. starting zsh from bash).
+    if [ -z "${PS1+x}" ]; then
+        PS1=
+    fi
+fi
+)MAMBARAW";
+                dest << "micromamba activate " << shell_prefix;
+                dest.close();
+
+                //const std::vector<std::string> bash_args {"podman", "run", "-it", "-v", "/home/adrien:/test", "ubuntu:focal"};
+                const std::vector<std::string> bash_args {"bash", "--rcfile", "umamba_session_rc", "-i"};
+                std::vector<const char*> argv;
+
+                for ( const auto& s : bash_args ) {
+                    argv.push_back( s.data() );
+                }
+                argv.push_back(NULL);
+                argv.shrink_to_fit();
+                errno = 0;
+
+                execv("/bin/bash", const_cast<char* const *>(argv.data()));
+                //reproc_run(const_cast<char* const *>(argv.data()), (reproc_options) { 0 });
+
+                std::cout << "deleting" << std::endl;
+                fs::remove_all(tmp_rc);
+
+            }
+            
             std::cout << activator->activate(shell_prefix, stack);
         }
         else if (action == "reactivate")
