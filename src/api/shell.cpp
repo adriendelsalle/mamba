@@ -169,11 +169,12 @@ __mamba_activate() {
     \local ask_conda
     CONDA_INTERNAL_OLDPATH="${PATH}"
     __add_sys_prefix_to_path
-    \local prefix="$@"
+    \local prefix="$1"
+    shift
     if [ "$prefix" = "" ]; then
         prefix="base"
     fi
-    ask_conda="$(PS1="$PS1" "$MAMBA_EXE" shell --shell bash "$cmd" --prefix "$prefix")" || \return $?
+    ask_conda="$(PS1="$PS1" "$MAMBA_EXE" shell --shell bash "$cmd" --prefix "$prefix" $@)" || \return $?
     rc=$?
     PATH="${CONDA_INTERNAL_OLDPATH}"
     \eval "$ask_conda"
