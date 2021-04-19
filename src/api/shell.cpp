@@ -19,7 +19,8 @@ namespace mamba
     void shell(const std::string& action,
                std::string& shell_type,
                const std::string& prefix,
-               bool stack)
+               bool stack,
+               bool isolated)
     {
         auto& ctx = Context::instance();
         auto& config = Configuration::instance();
@@ -112,7 +113,25 @@ namespace mamba
                 shell_prefix = ctx.root_prefix / "envs" / shell_prefix;
             }
 
-            std::cout << activator->activate(shell_prefix, stack);
+            if (isolated)
+            {
+                if (!config.at("experimental").value<bool>())
+                {
+                    LOG_ERROR << "Shell activation using container isolation needs 'experimental' mode";
+                    return;
+                }
+                if (!on_linux)
+                {
+                    LOG_ERROR << "Shell activation using container isolation is only available on linux for now";
+                    return;
+                }
+
+
+            }
+            else
+            {
+                std::cout << activator->activate(shell_prefix, stack);
+            }
         }
         else if (action == "reactivate")
         {

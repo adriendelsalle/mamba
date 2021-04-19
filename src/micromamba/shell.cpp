@@ -38,6 +38,11 @@ init_shell_parser(CLI::App* subcom)
                        configuration variable.)")));
     subcom->add_option("--stack", stack.set_cli_config(false), stack.description());
 
+    auto& isolated = config.insert(Configurable("shell_isolated", false)
+                                    .group("cli")
+                                    .description("Activate environment using container isolation"));
+    subcom->add_flag("--isolated", isolated.set_cli_config(false), isolated.description());
+
     auto& action = config.insert(Configurable("shell_action", std::string(""))
                                      .group("cli")
                                      .description("The action to complete"));
@@ -72,7 +77,8 @@ set_shell_command(CLI::App* subcom)
         auto& prefix = config.at("shell_prefix").compute().value<std::string>();
         auto& type = config.at("shell_type").compute().value<std::string>();
         auto& stack = config.at("shell_stack").compute().value<bool>();
+        auto& isolated = config.at("shell_isolated").compute().value<bool>();
 
-        shell(action, type, prefix, stack);
+        shell(action, type, prefix, stack, isolated);
     });
 }

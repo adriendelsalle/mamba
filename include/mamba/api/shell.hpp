@@ -18,7 +18,8 @@ namespace mamba
     void shell(const std::string& action,
                std::string& shell_type,
                const std::string& prefix = "",
-               bool stack = false);
+               bool stack = false,
+               bool isolated = false);
 }
 
 #endif
